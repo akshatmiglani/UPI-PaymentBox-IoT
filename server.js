@@ -6,7 +6,7 @@ const app = express();
 const PORT = 3000;
 const PDFDocument = require('pdfkit');
 const fs=require('fs')
-// Middleware to parse request body
+const axios=require('axios')
 app.use(bodyParser.json());
 const path=require('path')
 require('dotenv').config()
@@ -102,7 +102,24 @@ app.post('/api/payments', async (req, res) => {
 });
 
 
-// Start the server
+app.get('/latest-payment', async (req, res) => {
+  try {
+    const latestPayment = await Payment.findOne().sort({ timestamp: -1 });
+    
+    if (latestPayment) {
+      res.json({
+        amount: latestPayment.amount,
+        timestamp: latestPayment.timestamp,
+      });
+    } else {
+      res.status(404).json({ message: 'No payments found' });
+    }
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+
 app.listen(PORT,'0.0.0.0', () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
