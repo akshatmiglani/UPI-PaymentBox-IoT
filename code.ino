@@ -6,8 +6,8 @@
 #include <Keypad.h>
 #include "DFRobotDFPlayerMini.h"
 
-#define rxPin 16
-#define txPin 17
+#define rxPin 4
+#define txPin 2
 #define BAUD_RATE 9600
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);  
