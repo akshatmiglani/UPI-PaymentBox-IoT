@@ -1,8 +1,8 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 
-const char* ssid = "Wifi";        
-const char* password = "Akshat001"; 
+const char* ssid = "";        
+const char* password = ""; 
 
 void setup() {
   Serial.begin(115200);
@@ -28,7 +28,7 @@ void loop() {
     HTTPClient http;
 
     // Your API endpoint (replace with your server's IP address)
-    String serverUrl = "http://192.168.222.39:3000/api/payments";  
+    String serverUrl = "";  
     
     // Specify content-type header
     http.begin(serverUrl);
