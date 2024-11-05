@@ -29,6 +29,7 @@ mongoose.connect(process.env.MONGODB_URI, {
 // Define a schema for the payment record
 const paymentSchema = new mongoose.Schema({
   amount: { type: Number, required: true },
+  sender: { type: String, required: true }, 
   timestamp: { type: Date, default: Date.now },
 });
 
@@ -37,12 +38,12 @@ const Payment = mongoose.model('Payment', paymentSchema);
 
 app.post('/api/payments', async (req, res) => {
   try {
-    const { amount } = req.body;
-    if (!amount) {
-      return res.status(400).json({ message: 'Amount is required' });
+    const { amount,sender } = req.body;
+    if (!amount || !sender) {
+      return res.status(400).json({ message: 'Amount and sender are required' });
     }
 
-    const newPayment = new Payment({ amount });
+    const newPayment = new Payment({ amount,sender });
     await newPayment.save();
 
     const pdfPath = `./invoices/invoice_${newPayment._id}.pdf`;
@@ -61,6 +62,7 @@ app.post('/api/payments', async (req, res) => {
     doc.fontSize(12).text(`Invoice for Payment`, { align: 'center' });
     doc.moveDown();
     doc.text(`Amount: INR ${amount}`);
+    doc.text(`Sender: ${sender}`);  
     doc.text(`Timestamp: ${newPayment.timestamp}`);
     doc.moveDown();
     doc.text('Thank you for using EasyPayVault!', { align: 'center' });
@@ -69,24 +71,22 @@ app.post('/api/payments', async (req, res) => {
 
     // Wait until the PDF is completely generated
     pdfStream.on('finish', () => {
-      console.log("Hi1");
       const fileContent = fs.readFileSync(pdfPath);
 
       const params = {
         Bucket: 'upi-iot-project',
-        Key: `invoices/invoice_${newPayment._id}.pdf`, // S3 Key (path inside the bucket)
+        Key: `invoices/invoice_${newPayment._id}.pdf`, 
         Body: fileContent,
         ContentType: 'application/pdf'
       };
 
       // Upload the PDF to S3
       s3.upload(params, (err, data) => {
-        console.log("Hi1")
         if (err) {
           console.error('Error uploading file to S3:', err);
           return res.status(500).json({ message: 'Error uploading invoice to S3', error: err });
         }
-
+        console.log("sent");
         // Send back the S3 URL in the response
         res.status(201).json({
           message: 'Payment record created, invoice generated',

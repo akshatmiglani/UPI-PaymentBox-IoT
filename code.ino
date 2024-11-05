@@ -40,30 +40,29 @@ void setup() {
   Serial1.begin(BAUD_RATE, SERIAL_8N1, rxPin, txPin);
   FPSerial.begin(9600, SERIAL_8N1, 16, 17);
 
-  lcd.init();  // Initialize LCD
-  lcd.backlight(); // Turn on backlight
+  lcd.init(); 
+  lcd.backlight();
   lcd.clear();
   lcd.print("Initializing...");
 
   delay(100);
-
+  delay(10000);
   lcd.clear();
   lcd.print("Connecting MP3..");
 
 
-  // Start communication with DFPlayer Mini
+ 
   if (dfPlayer.begin(FPSerial)) {
-    dfPlayer.volume(29); // Set volume (0 to 30)
-    dfPlayer.play(33); // Play startup sound message
-    delay(3000); // Adjust delay based on audio length
+    dfPlayer.volume(29); 
+    dfPlayer.play(33); 
+    delay(3000); 
   } else {
     lcd.clear();
     lcd.print("DFPlayer Error");
-    while (true); // Halt execution
+    while (true);
   }
 
   lcd.clear();
-  delay(5000);
 
   
   lcd.clear();
@@ -78,11 +77,13 @@ void setup() {
 
   defaultMsgOnLCD();
 
-// parseAmount("A/c *XX1088 credited by Rs 149.50 from jesalparam-1@okaxis. RRN: 430942331879. Not You? call 18602677777- IndusInd Bank");
+  parseAmount("A/c *XX1088 credited by Rs 149.50 from jesalparam-1@okaxis. RRN: 430942331879. Not You? call 18602677777- IndusInd Bank");
 
 }
 
 void loop(){
+
+
   //checkSMS();
   lcd.setCursor(0, 0);
   
@@ -102,13 +103,16 @@ void loop(){
     for (int i = 40; i > 0; i--) {
       delay(1000); 
       lcd.setCursor(0, 1);
-      lcd.print("Time left: " + String(i) + "   "); // Clear previous text
+      lcd.print("Time left: " + String(i) + "   "); 
       char key = keypad.getKey();
       if (key == 'A') {
+        
         receiptRequested=true;
         lcd.clear();
         lcd.print("Enter Phone No:");
+        i=1000;
         String phoneNumber = getPhoneNumber();
+        
 
         if (phoneNumber.length() > 0) {
           sendSMS(phoneNumber, String("Download payment from: ") + s3InvoiceUrl);
@@ -123,7 +127,6 @@ void loop(){
     s3InvoiceUrl="";
     senderID="";
     defaultMsgOnLCD();
-
   }
 
 }
@@ -137,18 +140,18 @@ void defaultMsgOnLCD(){
 
 
 void checkSMS() {
-   incomingMessage = ""; // Clear the previous message
+   incomingMessage = ""; 
 
-   Serial2.println("AT+CMGF=1");  // Set SMS to text mode
+   Serial1.println("AT+CMGF=1");  
    delay(500);
    
-   Serial2.println("AT+CNMI=1,2,0,0,0");  // Configure to show SMS immediately
+   Serial1.println("AT+CNMI=1,2,0,0,0");  
    delay(500);
 
    unsigned long startTime = millis();
-   while (millis() - startTime < 3000) { // Wait up to 3 seconds for a message
-      while (Serial2.available()) {
-         incomingMessage += (char)Serial2.read();
+   while (millis() - startTime < 2000) {
+      while (Serial1.available()) {
+         incomingMessage += (char)Serial1.read();
       }
    }
    
@@ -238,33 +241,33 @@ void fetchS3InvoiceUrl() {
 }
 
 void sendSMS(String phoneNumber, String message) {
-  Serial2.println("AT");  
+  Serial1.println("AT");  
   delay(1000);
 
-  Serial2.println("AT+CMGF=1");  
+  Serial1.println("AT+CMGF=1");  
   delay(1000);
 
-  Serial2.print("AT+CMGS=\"");  
-  Serial2.print(phoneNumber);   
-  Serial2.println("\"");
+  Serial1.print("AT+CMGS=\"");  
+  Serial1.print(phoneNumber);   
+  Serial1.println("\"");
   delay(1000);
 
-  Serial2.print(message);  
+  Serial1.print(message);  
   delay(1000);
 
-  Serial2.write(26);  // CTRL+Z to send the SMS
+  Serial1.write(26);  // CTRL+Z to send the SMS
   delay(5000);  
 
   String smsStatus = "";
-  while (Serial2.available()) {
-    smsStatus += (char)Serial2.read();
+  while (Serial1.available()) {
+    smsStatus += (char)Serial1.read();
   }
   // Serial.println(smsStatus);  // Debugging SMS status
 }
 
 String getPhoneNumber() {
   lcd.setCursor(0,1);
-  String phoneNumber = "";
+  phoneNumber = "";
   char key;
   while (phoneNumber.length() < 10) { // Assume 10 digit number
     key = keypad.getKey();
@@ -275,7 +278,9 @@ String getPhoneNumber() {
       }
       if (key == '#' && phoneNumber.length() > 0) { // End input on '#'
         lcd.clear();
+        delay(2000);
         lcd.print("Sending recipet");
+        delay(2000);
         break;
       }
     }
