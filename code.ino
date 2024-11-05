@@ -12,14 +12,15 @@
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);  
 DFRobotDFPlayerMini dfPlayer;
-#define FPSerial Serial1
+#define FPSerial Serial2
 
+const String PHONE = "";
 const char* ssid = "";        
 const char* password = ""; 
 
 String incomingMessage;
 String paymentAmount;
-String senderNumber;
+String senderID;
 String s3InvoiceUrl;  
 bool receiptRequested = false; 
 
@@ -31,12 +32,12 @@ char keys[ROWS][COLS] = {
   {'7', '8', '9', 'C'},
   {'*', '0', '#', 'D'}
 };
-uint8_t rowPins[ROWS] = {14, 27, 26, 25}; // GIOP14, GIOP27, GIOP26, GIOP25
-uint8_t colPins[COLS] = {33, 32, 18, 19}; // GIOP33, GIOP32, GIOP18, GIOP19
+uint8_t rowPins[ROWS] = {14, 27, 26, 25}; 
+uint8_t colPins[COLS] = {33, 32, 18, 19}; 
 Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
 
 void setup() {
-  Serial2.begin(BAUD_RATE, SERIAL_8N1, rxPin, txPin);
+  Serial1.begin(BAUD_RATE, SERIAL_8N1, rxPin, txPin);
   FPSerial.begin(9600, SERIAL_8N1, 16, 17);
 
   lcd.init();  // Initialize LCD
@@ -72,36 +73,39 @@ void setup() {
     delay(1000);
   }
 
+  // Serial.print("ESP32 IP Address: ");
+  // Serial.println(WiFi.localIP());
+
   defaultMsgOnLCD();
 
-
+// parseAmount("A/c *XX1088 credited by Rs 149.50 from jesalparam-1@okaxis. RRN: 430942331879. Not You? call 18602677777- IndusInd Bank");
 
 }
 
 void loop(){
-  checkSMS();
+  //checkSMS();
   lcd.setCursor(0, 0);
   
   if (paymentAmount.length() > 0 && !receiptRequested) {
     
     lcd.clear();
-    lcd.print("Received: INR ");
+    lcd.print("REC: ");
     lcd.print(paymentAmount);
 
     processAmount(paymentAmount.toFloat());
 
     lcd.setCursor(0, 1);
     lcd.print("Get receipt? A:");
+    fetchS3InvoiceUrl();
 
-    // Start the countdown for 10 seconds
+
     for (int i = 40; i > 0; i--) {
-      delay(1000); // Wait for 1 second
+      delay(1000); 
       lcd.setCursor(0, 1);
       lcd.print("Time left: " + String(i) + "   "); // Clear previous text
       char key = keypad.getKey();
       if (key == 'A') {
-        fetchS3InvoiceUrl();
-        // If 'A' is pressed, ask for phone number
+        receiptRequested=true;
         lcd.clear();
         lcd.print("Enter Phone No:");
         String phoneNumber = getPhoneNumber();
@@ -116,7 +120,9 @@ void loop(){
   
     paymentAmount = "";
     receiptRequested = false; 
-    defaultMsgOnLCD
+    s3InvoiceUrl="";
+    senderID="";
+    defaultMsgOnLCD();
 
   }
 
@@ -131,60 +137,87 @@ void defaultMsgOnLCD(){
 
 
 void checkSMS() {
-  Serial2.println("AT+CMGF=1");  // Set SMS to text mode
-  delay(1000);
-  Serial2.println("AT+CNMI=1,2,0,0,0");  // Configure to show SMS immediately
-  delay(1000);
+   incomingMessage = ""; // Clear the previous message
 
-  while (Serial2.available()) {
-    incomingMessage += (char)Serial2.read();
-  }
+   Serial2.println("AT+CMGF=1");  // Set SMS to text mode
+   delay(500);
+   
+   Serial2.println("AT+CNMI=1,2,0,0,0");  // Configure to show SMS immediately
+   delay(500);
 
-  // Check if incoming message contains "INR"
-  if (incomingMessage.indexOf("INR") != -1) {
-    parseAmount(incomingMessage);
-    incomingMessage = "";  // Clear message after parsing
-  }
+   unsigned long startTime = millis();
+   while (millis() - startTime < 3000) { // Wait up to 3 seconds for a message
+      while (Serial2.available()) {
+         incomingMessage += (char)Serial2.read();
+      }
+   }
+   
+   Serial.println("Received message: ");
+   Serial.println(incomingMessage); // Display the entire message for debugging
+
+   // Check if the incoming message contains "INR"
+    if (incomingMessage.indexOf("A/c") != -1 && incomingMessage.indexOf("credited by Rs") != -1) {
+        parseAmount(incomingMessage); // Call the function to parse the amount
+        Serial.println("Parsed message: ");
+        Serial.println(incomingMessage); // Display the parsed message
+        incomingMessage = "";  // Clear message after parsing
+    }
 }
 
+
 void parseAmount(String message) {
-  // Example: "VPA "akshatmiglani.am-1@okhdfcbank" linked to A/C No."XXXXXX1088" is Dr with INR.88.0"
   Serial.println("Parsing message: " + message);
-  int startIndex = message.indexOf("INR.") + 4;
-  int endIndex = message.indexOf(" ", startIndex);
+
+  // Extract the amount after "Rs "
+  int amountStartIndex = message.indexOf("Rs ") + 3;
+  int amountEndIndex = message.indexOf(" ", amountStartIndex);
   
-  if (startIndex != -1 && endIndex != -1) {
-    paymentAmount = message.substring(startIndex, endIndex);
+  if (amountStartIndex != -1 && amountEndIndex != -1) {
+    paymentAmount = message.substring(amountStartIndex, amountEndIndex);
     Serial.println("Parsed Payment Amount: " + paymentAmount);
+  } else {
+    Serial.println("Payment amount not found.");
+  }
+
+  // Extract the sender ID after "from " and before the next space or period
+  int senderStartIndex = message.indexOf("from ") + 5;
+  int senderEndIndex = message.indexOf(".", senderStartIndex);
+  
+  if (senderStartIndex != -1 && senderEndIndex != -1) {
+    senderID = message.substring(senderStartIndex, senderEndIndex);
+    Serial.println("Parsed Sender ID: " + senderID);
+  } else {
+    Serial.println("Sender ID not found.");
   }
 }
 
 void fetchS3InvoiceUrl() {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
-    String serverUrl = "http://IP:3000/api/payments";  
+    String serverUrl = "";  
 
     // Set content-type and start the request
     http.begin(serverUrl);
     http.addHeader("Content-Type", "application/json");
 
     // JSON payload
-    String postData = "{\"amount\": " + paymentAmount + "}";  
+    String postData = "{\"amount\": " + paymentAmount + ", \"sender\": \"" + senderID + "\"}";
+
 
     // Send HTTP POST request
     int httpResponseCode = http.POST(postData);
 
     if (httpResponseCode > 0) {
       String response = http.getString(); // Get the JSON response
-      Serial.println("Response: " + response); // Debugging
+      // Serial.println("Response: " + response); // Debugging
 
       // Use ArduinoJson to parse JSON response
       StaticJsonDocument<200> doc;
       DeserializationError error = deserializeJson(doc, response);
       
       if (error) {
-        Serial.print("JSON Parsing failed: ");
-        Serial.println(error.c_str());
+        // Serial.print("JSON Parsing failed: ");
+        // Serial.println(error.c_str());
         return;
       }
 
@@ -193,11 +226,11 @@ void fetchS3InvoiceUrl() {
       if (invoiceUrl) {
         s3InvoiceUrl = invoiceUrl;  // Store invoice URL
       } else {
-        Serial.println("Error: 's3InvoiceUrl' not found in JSON response.");
+        // Serial.println("Error: 's3InvoiceUrl' not found in JSON response.");
       }
     } else {
-      Serial.print("Error on sending POST: ");
-      Serial.println(httpResponseCode);
+      // Serial.print("Error on sending POST: ");
+      // Serial.println(httpResponseCode);
     }
 
     http.end();
@@ -226,7 +259,7 @@ void sendSMS(String phoneNumber, String message) {
   while (Serial2.available()) {
     smsStatus += (char)Serial2.read();
   }
-  Serial.println(smsStatus);  // Debugging SMS status
+  // Serial.println(smsStatus);  // Debugging SMS status
 }
 
 String getPhoneNumber() {
@@ -253,17 +286,11 @@ String getPhoneNumber() {
 
 
 void processAmount(float amount) {
-  Serial.println("Processing Amount: " + String(amount, 2));
+  // Serial.println("Processing Amount: " + String(amount, 2));
 
   // Split amount into rupees and paise
   long rupees = (long)amount;
   int paise = (int)((amount - rupees) * 100);
-
-  // Display on LCD
-  lcd.clear();
-  lcd.print("Received: ");
-  lcd.setCursor(0, 1);
-  lcd.print("INR " + String(rupees) + "." + String(paise));
 
   // Play audio notification
   playAmountAudio(rupees, paise);
@@ -284,13 +311,13 @@ void playAmountAudio(long rupees, int paise) {
 
   // Convert rupees to words
   String rupeesInWords = convertNumberToWords(rupees);
-  Serial.println("Rupees in Words: " + rupeesInWords);
+  // Serial.println("Rupees in Words: " + rupeesInWords);
 
   // Convert paise to words
   String paiseInWords = "";
   if (paise > 0) {
     paiseInWords = convertNumberToWords(paise);
-    Serial.println("Paise in Words: " + paiseInWords);
+    // Serial.println("Paise in Words: " + paiseInWords);
   }
 
   // Split words into arrays and play audio

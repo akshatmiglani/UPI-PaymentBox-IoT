@@ -17,8 +17,8 @@ const char* password = "";
 
 String incomingMessage;
 String paymentAmount;
-String senderNumber;
-String s3InvoiceUrl;  
+String senderID;
+String s3InvoiceUrl; 
 bool receiptRequested = false; 
 
 #define ROWS  4
@@ -54,24 +54,26 @@ void setup() {
 }
 
 void loop() {
-  checkSMS();
+  // checkSMS();
   lcd.setCursor(0, 0);
+  // If a payment amount was parsed, process it
   if (paymentAmount.length() > 0 && !receiptRequested) {
     // Display the payment amount on the LCD
     lcd.clear();
-    lcd.print("Received: INR ");
+    lcd.print("REC: ");
     lcd.print(paymentAmount);
     lcd.setCursor(0, 1);
     lcd.print("Get receipt? A:");
+    fetchS3InvoiceUrl();
 
+    // Start the countdown for 10 seconds
     for (int i = 10; i > 0; i--) {
       delay(1000); // Wait for 1 second
       lcd.setCursor(0, 1);
-      lcd.print("Time left: " + String(i) + "   "); // Clear previous text
+      lcd.print("Time left: " + String(i) + "   ");
       char key = keypad.getKey();
       if (key == 'A') {
-        fetchS3InvoiceUrl();
-        // If 'A' is pressed, ask for phone number
+        receiptRequested=true;
         lcd.clear();
         lcd.print("Enter Phone No:");
         i=500;
@@ -80,13 +82,15 @@ void loop() {
         if (phoneNumber.length() > 0) {
           sendSMS(phoneNumber, String("Download payment from: ") + s3InvoiceUrl);
         }
-        break; 
+        break; // Exit the countdown loop
       }
     }
     delay(10000);
-    
+    // Reset for the next transaction
     paymentAmount = "";
     receiptRequested = false; // Reset flag
+    s3InvoiceUrl="";
+    senderID="";
     lcd.clear();
     lcd.print("Waiting for SMS...");
   }
@@ -94,68 +98,82 @@ void loop() {
 
 
 void checkSMS() {
-  Serial2.println("AT+CMGF=1");  // Set SMS to text mode
-  delay(1000);
-  Serial2.println("AT+CNMI=1,2,0,0,0");  // Configure to show SMS immediately
-  delay(1000);
+   incomingMessage = ""; // Clear the previous message
 
-  while (Serial2.available()) {
-    incomingMessage += (char)Serial2.read();
-  }
+   Serial2.println("AT+CMGF=1");  // Set SMS to text mode
+   delay(500);
+   
+   Serial2.println("AT+CNMI=1,2,0,0,0");  // Configure to show SMS immediately
+   delay(500);
 
-  
-  if (incomingMessage.indexOf("INR") != -1) {
-    parseAmount(incomingMessage);
-    incomingMessage = "";  
-  }
+   unsigned long startTime = millis();
+   while (millis() - startTime < 3000) { // Wait up to 3 seconds for a message
+      while (Serial2.available()) {
+         incomingMessage += (char)Serial2.read();
+      }
+   }
+   
+   Serial.println("Received message: ");
+   Serial.println(incomingMessage); // Display the entire message for debugging
+
+   // Check if the incoming message contains "INR"
+    if (incomingMessage.indexOf("A/c") != -1 && incomingMessage.indexOf("credited by Rs") != -1) {
+        parseAmount(incomingMessage); // Call the function to parse the amount
+        Serial.println("Parsed message: ");
+        Serial.println(incomingMessage); // Display the parsed message
+        incomingMessage = "";  // Clear message after parsing
+    }
 }
 
 void parseAmount(String message) {
   Serial.println("Parsing message: " + message);
-  int startIndex = message.indexOf("INR.") + 4;
-  int endIndex = message.indexOf(" ", startIndex);
+
+  // Extract the amount after "Rs "
+  int amountStartIndex = message.indexOf("Rs ") + 3;
+  int amountEndIndex = message.indexOf(" ", amountStartIndex);
   
-  if (startIndex != -1 && endIndex != -1) {
-    paymentAmount = message.substring(startIndex, endIndex);
+  if (amountStartIndex != -1 && amountEndIndex != -1) {
+    paymentAmount = message.substring(amountStartIndex, amountEndIndex);
     Serial.println("Parsed Payment Amount: " + paymentAmount);
+  } else {
+    Serial.println("Payment amount not found.");
+  }
+
+  // Extract the sender ID after "from " and before the next space or period
+  int senderStartIndex = message.indexOf("from ") + 5;
+  int senderEndIndex = message.indexOf(".", senderStartIndex);
+  
+  if (senderStartIndex != -1 && senderEndIndex != -1) {
+    senderID = message.substring(senderStartIndex, senderEndIndex);
+    Serial.println("Parsed Sender ID: " + senderID);
+  } else {
+    Serial.println("Sender ID not found.");
   }
 }
-
 void fetchS3InvoiceUrl() {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
-    String serverUrl = "http://192.168.29.81:3000/api/payments";  
+    String serverUrl = "";  
 
     // Set content-type and start the request
     http.begin(serverUrl);
     http.addHeader("Content-Type", "application/json");
 
-    // JSON payload
-    String postData = "{\"amount\": " + paymentAmount + "}";  
+    // JSON payload including amount and sender
+    String postData = "{\"amount\": " + paymentAmount + ", \"sender\": \"" + senderID + "\"}";
 
-    // Send HTTP POST request
     int httpResponseCode = http.POST(postData);
 
     if (httpResponseCode > 0) {
-      String response = http.getString(); // Get the JSON response
-      Serial.println("Response: " + response); // Debugging
+      String response = http.getString();
 
-      // Use ArduinoJson to parse JSON response
+      // Parse JSON response to extract 's3InvoiceUrl'
       StaticJsonDocument<200> doc;
       DeserializationError error = deserializeJson(doc, response);
-      
-      if (error) {
-        Serial.print("JSON Parsing failed: ");
-        Serial.println(error.c_str());
-        return;
-      }
-
-      // Extract 's3InvoiceUrl'
-      const char* invoiceUrl = doc["s3InvoiceUrl"];
-      if (invoiceUrl) {
-        s3InvoiceUrl = invoiceUrl;  // Store invoice URL
+      if (!error) {
+        s3InvoiceUrl = doc["s3InvoiceUrl"] | "";
       } else {
-        Serial.println("Error: 's3InvoiceUrl' not found in JSON response.");
+        Serial.println("Error parsing JSON response.");
       }
     } else {
       Serial.print("Error on sending POST: ");
