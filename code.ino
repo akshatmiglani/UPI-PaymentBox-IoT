@@ -14,7 +14,7 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 DFRobotDFPlayerMini dfPlayer;
 #define FPSerial Serial2
 
-const String PHONE = "";
+
 const char* ssid = "";        
 const char* password = ""; 
 
@@ -36,99 +36,21 @@ uint8_t rowPins[ROWS] = {14, 27, 26, 25};
 uint8_t colPins[COLS] = {33, 32, 18, 19}; 
 Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
 
-void setup() {
-  Serial1.begin(BAUD_RATE, SERIAL_8N1, rxPin, txPin);
-  FPSerial.begin(9600, SERIAL_8N1, 16, 17);
+bool sendATCommand(String command, const char* expectedResponse = "OK", uint16_t timeout = 2000) {
+  Serial1.println(command);
+  uint32_t startTime = millis();
+  String response = "";
 
-  lcd.init(); 
-  lcd.backlight();
-  lcd.clear();
-  lcd.print("Initializing...");
-
-  delay(100);
-  delay(10000);
-  lcd.clear();
-  lcd.print("Connecting MP3..");
-
-
- 
-  if (dfPlayer.begin(FPSerial)) {
-    dfPlayer.volume(29); 
-    dfPlayer.play(33); 
-    delay(3000); 
-  } else {
-    lcd.clear();
-    lcd.print("DFPlayer Error");
-    while (true);
-  }
-
-  lcd.clear();
-
-  
-  lcd.clear();
-  lcd.print("Wifi Setup...");
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-  }
-
-  // Serial.print("ESP32 IP Address: ");
-  // Serial.println(WiFi.localIP());
-
-  defaultMsgOnLCD();
-
-  parseAmount("A/c *XX1088 credited by Rs 149.50 from jesalparam-1@okaxis. RRN: 430942331879. Not You? call 18602677777- IndusInd Bank");
-
-}
-
-void loop(){
-
-
-  //checkSMS();
-  lcd.setCursor(0, 0);
-  
-  if (paymentAmount.length() > 0 && !receiptRequested) {
-    
-    lcd.clear();
-    lcd.print("REC: ");
-    lcd.print(paymentAmount);
-
-    processAmount(paymentAmount.toFloat());
-
-    lcd.setCursor(0, 1);
-    lcd.print("Get receipt? A:");
-    fetchS3InvoiceUrl();
-
-
-    for (int i = 40; i > 0; i--) {
-      delay(1000); 
-      lcd.setCursor(0, 1);
-      lcd.print("Time left: " + String(i) + "   "); 
-      char key = keypad.getKey();
-      if (key == 'A') {
-        
-        receiptRequested=true;
-        lcd.clear();
-        lcd.print("Enter Phone No:");
-        i=1000;
-        String phoneNumber = getPhoneNumber();
-        
-
-        if (phoneNumber.length() > 0) {
-          sendSMS(phoneNumber, String("Download payment from: ") + s3InvoiceUrl);
-        }
-        break; 
+  while (millis() - startTime < timeout) {
+    if (Serial1.available()) {
+      response += (char)Serial1.read();
+      if (response.indexOf(expectedResponse) != -1) {
+        return true;
       }
     }
-
-  
-    paymentAmount = "";
-    receiptRequested = false; 
-    s3InvoiceUrl="";
-    senderID="";
-    defaultMsgOnLCD();
   }
-
+  // Serial.println("Failed to execute command: " + command);
+  return false;
 }
 
 void defaultMsgOnLCD(){
@@ -139,37 +61,28 @@ void defaultMsgOnLCD(){
 }
 
 
-void checkSMS() {
-   incomingMessage = ""; 
+void checkSMS(){
+    if (Serial1.available()) {
+    String line = Serial1.readStringUntil('\n');
+    line.trim();
 
-   Serial1.println("AT+CMGF=1");  
-   delay(500);
-   
-   Serial1.println("AT+CNMI=1,2,0,0,0");  
-   delay(500);
+    if (line.startsWith("+CMT:")) {
+      // Extract sender information if needed
+      String senderInfo = line;
+      // Read the actual message content
+      String messageContent = Serial1.readStringUntil('\n');
+      messageContent.trim();
 
-   unsigned long startTime = millis();
-   while (millis() - startTime < 2000) {
-      while (Serial1.available()) {
-         incomingMessage += (char)Serial1.read();
-      }
-   }
-   
-   Serial.println("Received message: ");
-   Serial.println(incomingMessage); // Display the entire message for debugging
-
-   // Check if the incoming message contains "INR"
-    if (incomingMessage.indexOf("A/c") != -1 && incomingMessage.indexOf("credited by Rs") != -1) {
-        parseAmount(incomingMessage); // Call the function to parse the amount
-        Serial.println("Parsed message: ");
-        Serial.println(incomingMessage); // Display the parsed message
-        incomingMessage = "";  // Clear message after parsing
+      // Process the message content
+      // Serial.println("Received message: " + messageContent);
+      parseAmount(messageContent);
     }
+  }
 }
 
 
 void parseAmount(String message) {
-  Serial.println("Parsing message: " + message);
+  //Serial.println("Parsing message: " + message);
 
   // Extract the amount after "Rs "
   int amountStartIndex = message.indexOf("Rs ") + 3;
@@ -177,9 +90,9 @@ void parseAmount(String message) {
   
   if (amountStartIndex != -1 && amountEndIndex != -1) {
     paymentAmount = message.substring(amountStartIndex, amountEndIndex);
-    Serial.println("Parsed Payment Amount: " + paymentAmount);
+    //Serial.println("Parsed Payment Amount: " + paymentAmount);
   } else {
-    Serial.println("Payment amount not found.");
+    //Serial.println("Payment amount not found.");
   }
 
   // Extract the sender ID after "from " and before the next space or period
@@ -188,9 +101,9 @@ void parseAmount(String message) {
   
   if (senderStartIndex != -1 && senderEndIndex != -1) {
     senderID = message.substring(senderStartIndex, senderEndIndex);
-    Serial.println("Parsed Sender ID: " + senderID);
+    //Serial.println("Parsed Sender ID: " + senderID);
   } else {
-    Serial.println("Sender ID not found.");
+    // Serial.println("Sender ID not found.");
   }
 }
 
@@ -241,33 +154,31 @@ void fetchS3InvoiceUrl() {
 }
 
 void sendSMS(String phoneNumber, String message) {
-  Serial1.println("AT");  
-  delay(1000);
+  if (!sendATCommand("AT+CMGF=1")) return;  // Set SMS text mode
 
-  Serial1.println("AT+CMGF=1");  
-  delay(1000);
-
-  Serial1.print("AT+CMGS=\"");  
-  Serial1.print(phoneNumber);   
+  Serial1.print("AT+CMGS=\"");
+  Serial1.print(phoneNumber);
   Serial1.println("\"");
-  delay(1000);
+  delay(100);  // Short delay to wait for '>'
 
-  Serial1.print(message);  
-  delay(1000);
-
-  Serial1.write(26);  // CTRL+Z to send the SMS
-  delay(5000);  
-
-  String smsStatus = "";
-  while (Serial1.available()) {
-    smsStatus += (char)Serial1.read();
+  // Wait for '>' prompt
+  if (Serial1.find(">")) {
+    Serial1.print(message);
+    Serial1.write(26);  // CTRL+Z to send the SMS
+    // Wait for message send confirmation
+    if (Serial1.find("OK")) {
+      // Serial.println("SMS sent successfully");
+    } else {
+      // Serial.println("Error sending SMS");
+    }
+  } else {
+    // Serial.println("No prompt from GSM module");
   }
-  // Serial.println(smsStatus);  // Debugging SMS status
 }
 
 String getPhoneNumber() {
   lcd.setCursor(0,1);
-  phoneNumber = "";
+  String phoneNumber = "";
   char key;
   while (phoneNumber.length() < 10) { // Assume 10 digit number
     key = keypad.getKey();
@@ -472,3 +383,110 @@ void waitForAudioToFinish() {
   }
   delay(500);
 }
+
+
+
+
+void setup() {
+  Serial1.begin(BAUD_RATE, SERIAL_8N1, rxPin, txPin);
+  FPSerial.begin(9600, SERIAL_8N1, 16, 17);
+
+  lcd.init(); 
+  lcd.backlight();
+  lcd.clear();
+  lcd.print("Initializing...");
+
+  delay(100);
+  delay(10000);
+
+  while (Serial1.available()) Serial1.read();
+
+  sendATCommand("AT");         
+  sendATCommand("AT+CMGF=1");  
+  sendATCommand("AT+CNMI=2,2,0,0,0"); 
+
+  lcd.clear();
+  lcd.print("Connecting MP3..");
+
+
+ 
+  if (dfPlayer.begin(FPSerial)) {
+    dfPlayer.volume(29); 
+    dfPlayer.play(33); 
+    delay(3000); 
+  } else {
+    lcd.clear();
+    lcd.print("DFPlayer Error");
+    while (true);
+  }
+
+  lcd.clear();
+
+  
+  lcd.clear();
+  lcd.print("Wifi Setup...");
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+  }
+
+  // Serial.print("ESP32 IP Address: ");
+  // Serial.println(WiFi.localIP());
+
+  defaultMsgOnLCD();
+
+ 
+  // parseAmount("A/c *XX1088 credited by Rs 149.50 from jesalparam-1@okaxis. RRN: 430942331879. Not You? call 18602677777- IndusInd Bank");
+
+}
+
+void loop(){
+
+
+  checkSMS();
+  lcd.setCursor(0, 0);
+  
+  if (paymentAmount.length() > 0 && !receiptRequested) {
+    
+    lcd.clear();
+    lcd.print("REC: ");
+    lcd.print(paymentAmount);
+
+    processAmount(paymentAmount.toFloat());
+
+    lcd.setCursor(0, 1);
+    lcd.print("Get receipt? A:");
+    fetchS3InvoiceUrl();
+
+
+    for (int i = 40; i > 0; i--) {
+      delay(1000); 
+      lcd.setCursor(0, 1);
+      lcd.print("Time left: " + String(i) + "   "); 
+      char key = keypad.getKey();
+      if (key == 'A') {
+        
+        receiptRequested=true;
+        lcd.clear();
+        lcd.print("Enter Phone No:");
+        i=1000;
+        String phoneNumber = getPhoneNumber();
+        
+
+        if (phoneNumber.length() > 0) {
+          sendSMS(phoneNumber, String("Download payment from: ") + s3InvoiceUrl);
+        }
+        break; 
+      }
+    }
+
+  
+    paymentAmount = "";
+    receiptRequested = false; 
+    s3InvoiceUrl="";
+    senderID="";
+    defaultMsgOnLCD();
+  }
+
+}
+
