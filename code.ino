@@ -12,8 +12,7 @@
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);  
 DFRobotDFPlayerMini dfPlayer;
-#define FPSerial Serial2
-
+#define FPSerial Serial1
 
 const char* ssid = "";        
 const char* password = ""; 
@@ -36,22 +35,6 @@ uint8_t rowPins[ROWS] = {14, 27, 26, 25};
 uint8_t colPins[COLS] = {33, 32, 18, 19}; 
 Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
 
-bool sendATCommand(String command, const char* expectedResponse = "OK", uint16_t timeout = 2000) {
-  Serial1.println(command);
-  uint32_t startTime = millis();
-  String response = "";
-
-  while (millis() - startTime < timeout) {
-    if (Serial1.available()) {
-      response += (char)Serial1.read();
-      if (response.indexOf(expectedResponse) != -1) {
-        return true;
-      }
-    }
-  }
-  // Serial.println("Failed to execute command: " + command);
-  return false;
-}
 
 void defaultMsgOnLCD(){
   lcd.clear();
@@ -61,21 +44,21 @@ void defaultMsgOnLCD(){
 }
 
 
-void checkSMS(){
-    if (Serial1.available()) {
-    String line = Serial1.readStringUntil('\n');
+void checkSMS() {
+  while (Serial2.available()) {
+    String line = Serial2.readStringUntil('\n');
     line.trim();
 
     if (line.startsWith("+CMT:")) {
-      // Extract sender information if needed
-      String senderInfo = line;
+      // Extract sender and message body
+      String senderInfo = line;  // Sender info in the format "+CMT: ..."
+
       // Read the actual message content
-      String messageContent = Serial1.readStringUntil('\n');
+      String messageContent = Serial2.readStringUntil('\n');
       messageContent.trim();
 
       // Process the message content
-      // Serial.println("Received message: " + messageContent);
-      parseAmount(messageContent);
+      parseAmount(messageContent);  // Call your parseAmount function
     }
   }
 }
@@ -154,25 +137,17 @@ void fetchS3InvoiceUrl() {
 }
 
 void sendSMS(String phoneNumber, String message) {
-  if (!sendATCommand("AT+CMGF=1")) return;  // Set SMS text mode
+  Serial2.print("AT+CMGS=\"");
+  Serial2.print(phoneNumber);
+  Serial2.println("\"");  
 
-  Serial1.print("AT+CMGS=\"");
-  Serial1.print(phoneNumber);
-  Serial1.println("\"");
-  delay(100);  // Short delay to wait for '>'
+  delay(100);  
 
-  // Wait for '>' prompt
-  if (Serial1.find(">")) {
-    Serial1.print(message);
-    Serial1.write(26);  // CTRL+Z to send the SMS
-    // Wait for message send confirmation
-    if (Serial1.find("OK")) {
-      // Serial.println("SMS sent successfully");
-    } else {
-      // Serial.println("Error sending SMS");
-    }
-  } else {
-    // Serial.println("No prompt from GSM module");
+  if (Serial2.find(">")) {
+    // Send the message content
+    Serial2.print(message);
+    // End the message with a Ctrl+Z (ASCII 26) to send the SMS
+    Serial2.write(26);  // ASCII value 26 is the Ctrl+Z character, used to end the SMS
   }
 }
 
@@ -180,22 +155,26 @@ String getPhoneNumber() {
   lcd.setCursor(0,1);
   String phoneNumber = "";
   char key;
-  while (phoneNumber.length() < 10) { // Assume 10 digit number
+  while (phoneNumber.length() < 10) { 
     key = keypad.getKey();
     if (key) {
-      if (key >= '0' && key <= '9') { // Accept digits only
+      if (key >= '0' && key <= '9') { 
         phoneNumber += key;
         lcd.print(key); // Display digit on LCD
       }
-      if (key == '#' && phoneNumber.length() > 0) { // End input on '#'
+
+      else if (key == '*' && phoneNumber.length()>0) { 
+            
+        phoneNumber.remove(phoneNumber.length() - 1); 
         lcd.clear();
-        delay(2000);
-        lcd.print("Sending recipet");
-        delay(2000);
+        lcd.print(phoneNumber); 
+      }
+
+      else if (key == '#' && phoneNumber.length() > 0) { 
+        lcd.clear();
         break;
       }
     }
-    delay(100); 
   }
   return phoneNumber;
 }
@@ -218,16 +197,9 @@ void playAmountAudio(long rupees, int paise) {
   
   dfPlayer.play(getAudioFileNumber("you have received"));
   waitForAudioToFinish();
-  delay(1000);
+  delay(500);
 
-  // Play "rupees"
-  // dfPlayer.play(getAudioFileNumber("rupees"));
-  // waitForAudioToFinish();
-  // delay(500);
-
-  // Convert rupees to words
   String rupeesInWords = convertNumberToWords(rupees);
-  // Serial.println("Rupees in Words: " + rupeesInWords);
 
   // Convert paise to words
   String paiseInWords = "";
@@ -381,39 +353,33 @@ void waitForAudioToFinish() {
       }
     } 
   }
-  delay(500);
+  delay(250);
 }
 
 
-
-
 void setup() {
-  Serial1.begin(BAUD_RATE, SERIAL_8N1, rxPin, txPin);
-  FPSerial.begin(9600, SERIAL_8N1, 16, 17);
+  Serial2.begin(BAUD_RATE, SERIAL_8N1, 16, 17);
+  FPSerial.begin(9600, SERIAL_8N1, 4, 2);
 
   lcd.init(); 
   lcd.backlight();
   lcd.clear();
   lcd.print("Initializing...");
 
-  delay(100);
-  delay(10000);
+  delay(20000);
 
-  while (Serial1.available()) Serial1.read();
-
-  sendATCommand("AT");         
-  sendATCommand("AT+CMGF=1");  
-  sendATCommand("AT+CNMI=2,2,0,0,0"); 
+  Serial2.println("AT+CMGF=1");
+  delay(1000);
+  Serial2.println("AT+CNMI=1,2,0,0,0");    
+  delay(1000);
 
   lcd.clear();
   lcd.print("Connecting MP3..");
-
 
  
   if (dfPlayer.begin(FPSerial)) {
     dfPlayer.volume(29); 
     dfPlayer.play(33); 
-    delay(3000); 
   } else {
     lcd.clear();
     lcd.print("DFPlayer Error");
@@ -460,12 +426,12 @@ void loop(){
 
 
     for (int i = 40; i > 0; i--) {
-      delay(1000); 
       lcd.setCursor(0, 1);
       lcd.print("Time left: " + String(i) + "   "); 
+      delay(1000);
       char key = keypad.getKey();
       if (key == 'A') {
-        
+
         receiptRequested=true;
         lcd.clear();
         lcd.print("Enter Phone No:");
@@ -479,8 +445,7 @@ void loop(){
         break; 
       }
     }
-
-  
+    
     paymentAmount = "";
     receiptRequested = false; 
     s3InvoiceUrl="";
