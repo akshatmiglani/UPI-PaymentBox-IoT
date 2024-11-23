@@ -41,3 +41,6 @@ The wiring may vary based on the specific model of the DF Player Mini / MP3-TF-1
 
 ## Sample Invoice
 ![Sample Invoice](sample_invoice.png)
+
+## SMS Sample
+![SMS Sample](sms_sample.jpg)
