@@ -44,3 +44,11 @@ The wiring may vary based on the specific model of the DF Player Mini / MP3-TF-1
 
 ## SMS Sample
 ![SMS Sample](sms_sample.jpg)
+
+# Scope of Improvement
+
+1.	Using a better microcontroller, to perform multithreading and implement a message queue to handle concurrency and more than 1 payment message in local memory.
+
+2.	The user can be given a choice to choose a language for the voice notifications and user can use his/her voice for notifications.
+
+3.	Instead of parsing SMS by respective bank’s notification, a better alternative is registering/ creating a GPay/ Paytm UPI for Business account and using the provided APIs for monitoring payment notifications. Also, MQTT protocol can be used for the project then.
