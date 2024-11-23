@@ -29,3 +29,15 @@ The wiring may vary based on the specific model of the DF Player Mini / MP3-TF-1
 
 
 ![Connection Diagarm](connection_diagram.png)
+
+
+
+## S3 Bucket Invoice:
+![S3 Bucket](aws_s3.png)
+
+## Database Entry
+![Data Entry](mongodb_sample.png)
+
+
+## Sample Invoice
+![Sample Invoice](sample_invoice.png)
