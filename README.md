@@ -1,6 +1,11 @@
 # UPI PAYMENT BOX
 
 ## Introduction
+
+View this youtube video for detailed explanation:
+
+[![Video Explanation](https://img.youtube.com/vi/L38dmr5PvOQ/0.jpg)](https://www.youtube.com/watch?v=L38dmr5PvOQ)
+
 The UPI Payment Box project aims to create a device that records and notifies merchants/vendors/shopkeepers of UPI payments made to them in real time. This device provides sound notifications, receipt generation, and optional SMS receipt services for customer convenience.
 
 Features:
